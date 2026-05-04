@@ -1,0 +1,39 @@
+{
+  "system": [
+    {
+      "type": "text",
+      "text": "x-anthropic-billing-header: cc_version=2.1.126.88c; cc_entrypoint=sdk-cli; cch=b7a89;"
+    },
+    {
+      "type": "text",
+      "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    },
+    {
+      "type": "text",
+      "text": "CWD: /Users/<USER>/Code\nDate: 2026-05-04\n\ngitStatus: (clean)",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "metadata": {
+    "user_id": "{\"device_id\":\"<YOUR_DEVICE_ID_HERE>\",\"account_uuid\":\"\",\"session_id\":\"<SESSION_ID>\"}"
+  },
+  "thinking": {
+    "type": "adaptive"
+  },
+  "context_management": {
+    "edits": [
+      {
+        "type": "clear_thinking_20251015",
+        "keep": "all"
+      }
+    ]
+  },
+  "output_config": {
+    "effort": "xhigh"
+  }
+}
