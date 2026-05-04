@@ -83,6 +83,53 @@ hermes gateway restart
 | `HERMES_PROXY_LOG` | `0` | `1` 启用 body 详细日志 |
 | `HERMES_PROXY_TEMPLATE` | `<脚本同目录>/template.json` | 模板文件路径 |
 
+## 日常管理（快捷命令）
+
+项目附带交互式管理脚本 `hermes-proxy.sh`，支持数字菜单管理代理。
+
+### 添加快捷命令
+
+在 `~/.zshrc`（或 `~/.bashrc`）中添加 alias：
+
+```bash
+alias hermes-proxy='bash /Users/hainingyu/Code/hermes_anyrouter_proxy/hermes-proxy.sh'
+```
+
+然后 `source ~/.zshrc` 或新开终端即可使用。
+
+### 菜单功能
+
+```bash
+hermes-proxy
+```
+
+```
+======================================
+   Hermes Anyrouter Proxy 管理菜单
+======================================
+
+  1) 启动代理
+  2) 停止代理
+  3) 重启代理
+  4) 查看状态
+  5) 查看实时日志
+  6) 修改推理强度 (effort)
+  7) 退出
+```
+
+### 切换推理强度
+
+选 `6` 后按数字选择：
+
+| 选项 | 强度 | 说明 |
+|---|---|---|
+| 1 | `low` | 快速响应，消耗 token 最少 |
+| 2 | `medium` | 默认平衡 |
+| 3 | `high` | 更深推理 |
+| 4 | `xhigh` | 极致深度，最耗 token |
+
+选择后代理会自动重启，新配置立即生效。
+
 ## 维护
 
 - **重抓模板**（cc 升级、anyrouter 改了校验规则后）：见详细文档第 9.1 节
