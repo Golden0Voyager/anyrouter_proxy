@@ -1,0 +1,18 @@
+# 运行时日志
+proxy.log
+*.log
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.pyo
+
+# macOS 元文件
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# 敏感配置文件：包含个人 device_id 设备指纹
+template.json
