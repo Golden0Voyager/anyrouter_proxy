@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>local.hermes-anyrouter-proxy</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>-u</string>
+        <string>/Users/hainingyu/Code/hermes_anyrouter_proxy/proxy.py</string>
+    </array>
+
+    <!-- Run at login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Auto-restart on crash; do NOT restart if exited cleanly -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <!-- Throttle restart attempts to once every 10 seconds -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Default body-injection settings; tweak via launchctl setenv if needed -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HERMES_PROXY_PORT</key>
+        <string>8989</string>
+        <key>HERMES_PROXY_EFFORT</key>
+        <string>medium</string>
+        <key>HERMES_PROXY_THINKING</key>
+        <string>adaptive</string>
+        <key>HERMES_PROXY_LOG</key>
+        <string>0</string>
+    </dict>
+
+    <!-- Logs -->
+    <key>StandardOutPath</key>
+    <string>/Users/hainingyu/Code/hermes_anyrouter_proxy/proxy.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/hainingyu/Code/hermes_anyrouter_proxy/proxy.log</string>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/Users/hainingyu/Code/hermes_anyrouter_proxy</string>
+
+    <!-- Run as user, not root -->
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
