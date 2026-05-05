@@ -73,6 +73,64 @@ providers:
 hermes gateway restart
 ```
 
+## 配置 Claude Desktop (Mac) 用这个代理
+
+Claude Desktop 走标准 Anthropic SDK，代理会根据 `model` 字段**自动分流**：
+- **Opus / Sonnet** → `opus_1m` 通道，注入完整 cc 指纹
+- **Haiku / 其他** → `standard` 通道，仅保留最小 header，避免 anyrouter 520
+
+### 1. 修改 settings.json
+
+文件路径：
+```
+~/Library/Application Support/Claude/settings.json
+```
+
+完整配置模板（**两个区块都要写**，缺一不可）：
+
+```json
+{
+  "inferenceProvider": "gateway",
+  "gateway": {
+    "apiUrl": "http://127.0.0.1:8989",
+    "apiKey": "YOUR_ANYROUTER_API_KEY",
+    "anthropicVersion": "2023-06-01"
+  },
+  "modelSelection": {
+    "allowModelSelection": true,
+    "enableModelPicker": true
+  },
+  "overrides": {
+    "apiUrl": "http://127.0.0.1:8989",
+    "apiKey": "YOUR_ANYROUTER_API_KEY",
+    "anthropicVersion": "2023-06-01"
+  }
+}
+```
+
+**关键点**：
+- `gateway.apiUrl` 决定模型列表拉取地址
+- `overrides.apiUrl` 决定实际对话请求地址
+- Claude Desktop **自带 `x-api-key`**，代理不会读取本机的 `$ANYROUTER_API_KEY`
+- 建议使用**独立的 anyrouter API Key**，与 hermes / claude-code 分开，方便额度管控
+
+### 2. 重启 Claude Desktop
+
+完全退出（Cmd+Q）后重新打开，否则 `settings.json` 缓存不生效。
+
+### 3. 验证模型列表
+
+打开新对话 → 模型选择器应出现如下条目：
+
+| 显示名称 | 实际 model 字段 | 代理通道 | 说明 |
+|---|---|---|---|
+| Claude Opus 4.7 | `claude-opus-4-7` | `opus_1m` | 完整 cc 指纹 |
+| Claude Opus 4.7 1M | `claude-opus-4-7` + 1M suffix | `opus_1m` | 同上，1M 上下文开关 |
+| Claude Sonnet 4.5 | `claude-sonnet-4-5-20250929` | `opus_1m` | 实测支持 1M 通道 |
+| Claude Haiku 4.5 | `claude-haiku-4-5-20251001` | `standard` | 纯净 Anthropic SDK 请求 |
+
+> **注意**：模型列表中可能出现重复条目（如两个 Opus 4.7），这是 Claude Desktop 对同名模型带/不带 1M suffix 的显示策略，不影响使用。
+
 ## 可调参数（环境变量，在 plist 里设置）
 
 | 变量 | 默认值 | 说明 |
@@ -129,6 +187,24 @@ hermes-proxy
 | 4 | `xhigh` | 极致深度，最耗 token |
 
 选择后代理会自动重启，新配置立即生效。
+
+## 故障速查
+
+| 现象 | 可能原因 | 排查 / 解决 |
+|---|---|---|
+| `Connection refused` | 代理未启动 | `hermes-proxy` → 选 4 看状态，或 `curl http://127.0.0.1:8989` |
+| `520 Unknown Error` | standard 通道请求被 anyrouter 拒绝 | 检查模型是否在 standard 列表（Haiku），或账号是否仅支持 1M 通道 |
+| `429 Too Many Requests` | anyrouter 账号该模型的额度耗尽 | 换模型或联系 anyrouter 客服；与 proxy 配置无关 |
+| `503 Service Unavailable` | anyrouter 上游 Claude 侧瞬时不可用 | Claude Desktop 内置重试通常可恢复；若持续出现，检查 anyrouter 状态页 |
+| `"1m 上下文已经全量可用..."` | 1M 通道缺少 `context-1m-2025-08-07` beta 或 `?beta=true` | 确认请求走的是 `opus_1m` 通道（看 `proxy.log` 中的 `[opus_1m]` 标记）|
+| 模型列表为空/不更新 | `settings.json` 缓存未刷新 | Cmd+Q 完全退出 Claude Desktop 再重开 |
+| 选 Haiku 仍报错 | anyrouter 账号本身不支持标准通道 | 部分 1M-only 订阅账号会拒绝所有非 1M 请求，与 proxy 无关 |
+
+代理访问日志格式：
+```
+[access] POST /v1/messages [opus_1m] -> 200
+```
+方括号里的 `opus_1m` / `standard` 即为当前请求选用的通道，排错时先看这一位。
 
 ## 维护
 
