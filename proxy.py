@@ -52,23 +52,47 @@ UPSTREAM_HOST = "anyrouter.top"
 UPSTREAM_BASE = f"https://{UPSTREAM_HOST}"
 
 # Header set Claude Code 2.1.126 sends for the 1M-context Claude channel.
-INJECTED_BETAS = ",".join([
+# Split into two profiles: opus_1m (full 7-beta set) vs. standard (drops the
+# two 1M-context-specific betas). Selected per-request based on the model.
+BETAS_OPUS_1M = [
     "claude-code-20250219",
-    "context-1m-2025-08-07",
+    "context-1m-2025-08-07",          # 1M-context only
     "interleaved-thinking-2025-05-14",
-    "context-management-2025-06-27",
+    "context-management-2025-06-27",  # paired with context_management body field
     "prompt-caching-scope-2026-01-05",
     "advisor-tool-2026-03-01",
     "effort-2025-11-24",
-])
+]
+_ONE_M_ONLY_BETAS = {"context-1m-2025-08-07", "context-management-2025-06-27"}
+BETAS_STANDARD = [b for b in BETAS_OPUS_1M if b not in _ONE_M_ONLY_BETAS]
 
-INJECTED_HEADERS = {
-    "anthropic-beta": INJECTED_BETAS,
+INJECTED_BETAS_FULL = ",".join(BETAS_OPUS_1M)
+INJECTED_BETAS_STD = ",".join(BETAS_STANDARD)
+
+# Body fields that only belong to the 1M-context channel; stripped for
+# standard models (haiku / sonnet) to avoid anyrouter backend rejection (520).
+ONE_M_BODY_FIELDS = ("context_management",)
+
+# Headers always injected for the opus_1m channel (full Claude Code fingerprint).
+# anthropic-beta is filled per-request from the matching profile in _proxy().
+# For the standard channel, NONE of these are injected — anyrouter routes
+# requests carrying any cc fingerprint (User-Agent, x-app, cc-style betas,
+# cc billing system header) into the 1M-context check, which then 400s for
+# non-Opus models. Standard requests must therefore look like plain Anthropic
+# SDK calls.
+INJECTED_HEADERS_OPUS_1M = {
     "anthropic-dangerous-direct-browser-access": "true",
     "anthropic-version": "2023-06-01",
     "User-Agent": "claude-cli/2.1.126 (external, sdk-cli)",
     "x-app": "cli",
 }
+INJECTED_HEADERS_STANDARD = {
+    "anthropic-version": "2023-06-01",
+}
+
+# Header keys that hermes/CD might forward but which leak the cc identity to
+# anyrouter. Stripped from outbound requests on the standard channel.
+STANDARD_STRIP_HEADER_PREFIXES = ("user-agent", "x-app", "anthropic-beta")
 
 # Path to a captured Claude Code request body. Used as the base body so that
 # anyrouter's strict validation (system fingerprint + metadata.device_id) sees
@@ -120,13 +144,47 @@ def _redact(name: str, value: str) -> str:
     return value
 
 
-def _patch_body(raw: bytes) -> bytes:
-    """Compose outbound body: template + hermes overrides.
+def _classify_channel(raw: bytes) -> str:
+    """Pick the request profile based on the body's `model` field.
 
-    Hermes is allowed to control HERMES_OVERRIDE_KEYS (model, messages,
-    max_tokens, etc.). Everything else (system, metadata, thinking,
-    context_management, output_config) is taken from the captured CC
-    template so that anyrouter's strict validation passes.
+    - `opus_1m` for Opus and Sonnet (both support the 1M-context channel via
+      `context-1m-2025-08-07` beta) → full 1M-context header + body
+      fingerprint required by anyrouter.
+    - `standard` for Haiku (no 1M support) → drop 1M-only betas, body
+      fields, and the `?beta=true` query so anyrouter routes through the
+      plain channel and doesn't 520.
+
+    Empty / non-JSON body falls back to `opus_1m` so legacy hermes / cc-style
+    callers without an explicit model field keep their working behavior.
+    """
+    if not raw:
+        return "opus_1m"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return "opus_1m"
+    if not isinstance(parsed, dict):
+        return "opus_1m"
+    model = str(parsed.get("model", "")).lower()
+    # Models known NOT to support the 1M-context channel on anyrouter.
+    # Everything else (opus, sonnet) gets the full 1M fingerprint.
+    if "haiku" in model:
+        return "standard"
+    return "opus_1m"
+
+
+def _patch_body(raw: bytes, channel: str = "opus_1m") -> bytes:
+    """Compose outbound body based on the routing channel.
+
+    opus_1m: take the captured CC template as base, overlay hermes-controlled
+    keys (model, messages, max_tokens, ...) on top. This is the only way
+    anyrouter's 1M-context channel accepts requests.
+
+    standard: pass the hermes/Claude Desktop body through unchanged. Adding
+    the CC template's `system` (with `x-anthropic-billing-header: cc_version=...`),
+    `metadata.device_id`, `thinking`, `output_config`, etc. tags the request
+    as a Claude Code call and forces anyrouter into the 1M-context check,
+    which then 400s for non-1M models like Haiku.
     """
     if not raw:
         return raw
@@ -137,6 +195,16 @@ def _patch_body(raw: bytes) -> bytes:
     if not isinstance(hermes_body, dict):
         return raw
 
+    if channel == "standard":
+        # Strip any leaked cc-fingerprint fields the client might have set,
+        # then forward as-is. Don't merge the template.
+        for field in ("context_management",) + (
+            # Common cc-only fields hermes won't set but Claude Desktop might.
+        ):
+            hermes_body.pop(field, None)
+        return json.dumps(hermes_body, ensure_ascii=False).encode("utf-8")
+
+    # opus_1m channel: full CC template + hermes overrides.
     template = _load_template()
     if template:
         composed = dict(template)
@@ -153,14 +221,35 @@ def _patch_body(raw: bytes) -> bytes:
     return json.dumps(composed, ensure_ascii=False).encode("utf-8")
 
 
-def _patch_path(path: str) -> str:
-    """Ensure /v1/messages requests carry ?beta=true (required by anyrouter)."""
+def _patch_path(path: str, channel: str = "opus_1m") -> str:
+    """Align /v1/messages query string with the routing channel.
+
+    The `?beta=true` query is anyrouter's switch into the 1M-context route;
+    a request landing there without the matching `context-1m-2025-08-07`
+    beta header is rejected with "1m 上下文已经全量可用，请启用 1m 上下文
+    后重试". Therefore:
+
+    - opus_1m channel: ensure `?beta=true` is present.
+    - standard channel: ensure `?beta=true` is NOT present, even if the
+      client (e.g. Claude Desktop) added it on its own.
+    """
     if not path.startswith("/v1/messages"):
         return path
-    if "beta=true" in path:
+
+    has_beta = "beta=true" in path
+
+    if channel == "opus_1m":
+        if has_beta:
+            return path
+        sep = "&" if "?" in path else "?"
+        return path + sep + "beta=true"
+
+    # standard channel: strip beta=true if the client added it.
+    if not has_beta:
         return path
-    sep = "&" if "?" in path else "?"
-    return path + sep + "beta=true"
+    base, _, query = path.partition("?")
+    remaining = [p for p in query.split("&") if p and p != "beta=true"]
+    return base if not remaining else base + "?" + "&".join(remaining)
 
 
 # --- Handler -----------------------------------------------------------------
@@ -169,31 +258,55 @@ def _patch_path(path: str) -> str:
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
+    # Set in _proxy() per-request. Used by log_message() so each access line
+    # records which routing profile was applied.
+    _channel: str = "-"
+
     def log_message(self, fmt: str, *args: Any) -> None:
         # Always emit a one-line access log (no body)
         line = fmt % args if args else fmt
-        print(f"[access] {self.command} {self.path} -> {line}")
+        print(f"[access] {self.command} {self.path} [{self._channel}] -> {line}")
 
     def _proxy(self) -> None:
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length) if length else b""
-        body = _patch_body(body)
+
+        # Classify before rewriting so log_message can report the channel.
+        channel = _classify_channel(body)
+        self._channel = channel
+        body = _patch_body(body, channel)
 
         # Build outbound headers: take everything except hop-by-hop headers,
-        # then overlay our injected headers.
+        # then overlay our injected headers per-channel.
+        hop_by_hop = ("host", "content-length", "connection", "accept-encoding")
         outbound: dict[str, str] = {}
         for k, v in self.headers.items():
             kl = k.lower()
-            if kl in ("host", "content-length", "connection", "accept-encoding"):
+            if kl in hop_by_hop:
+                continue
+            # On the standard channel, drop any cc-fingerprint headers the
+            # client added (User-Agent, x-app, anthropic-beta). We will
+            # re-inject only the minimum set below.
+            if channel == "standard" and kl in STANDARD_STRIP_HEADER_PREFIXES:
                 continue
             outbound[k] = v
-        for k, v in INJECTED_HEADERS.items():
-            outbound[k] = v
+
+        if channel == "opus_1m":
+            for k, v in INJECTED_HEADERS_OPUS_1M.items():
+                outbound[k] = v
+            outbound["anthropic-beta"] = INJECTED_BETAS_FULL
+        else:
+            for k, v in INJECTED_HEADERS_STANDARD.items():
+                outbound[k] = v
+            # Standard channel: no anthropic-beta at all — any cc-style beta
+            # tags this as a Claude Code request and anyrouter forces 1M check.
+            outbound.pop("anthropic-beta", None)
+
         outbound["Host"] = UPSTREAM_HOST
         outbound["Accept-Encoding"] = "identity"  # easier to relay raw bytes
         outbound["Content-Length"] = str(len(body))
 
-        upstream_url = UPSTREAM_BASE + _patch_path(self.path)
+        upstream_url = UPSTREAM_BASE + _patch_path(self.path, channel)
 
         if LOG_BODIES:
             print(f"[upstream] {self.command} {upstream_url}")
