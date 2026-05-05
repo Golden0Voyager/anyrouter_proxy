@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Hermes Anyrouter Proxy 管理脚本
-# 用法: bash hermes-proxy.sh
+# Anyrouter Proxy 管理脚本
+# 用法: bash anyrouter-proxy.sh
 
 PLIST="$HOME/Library/LaunchAgents/local.hermes-anyrouter-proxy.plist"
 LABEL="local.hermes-anyrouter-proxy"
