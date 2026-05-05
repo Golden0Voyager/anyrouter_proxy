@@ -4,7 +4,7 @@
 
 PLIST="$HOME/Library/LaunchAgents/local.hermes-anyrouter-proxy.plist"
 LABEL="local.hermes-anyrouter-proxy"
-LOG="$HOME/Code/hermes_anyrouter_proxy/proxy.log"
+LOG="$HOME/Code/anyrouter_proxy/proxy.log"
 
 # 清屏（可选）
 # clear

@@ -9,7 +9,7 @@
     <array>
         <string>/opt/homebrew/bin/python3</string>
         <string>-u</string>
-        <string>/Users/hainingyu/Code/hermes_anyrouter_proxy/proxy.py</string>
+        <string>/Users/hainingyu/Code/anyrouter_proxy/proxy.py</string>
     </array>
 
     <!-- Run at login -->
@@ -44,13 +44,13 @@
 
     <!-- Logs -->
     <key>StandardOutPath</key>
-    <string>/Users/hainingyu/Code/hermes_anyrouter_proxy/proxy.log</string>
+    <string>/Users/hainingyu/Code/anyrouter_proxy/proxy.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/hainingyu/Code/hermes_anyrouter_proxy/proxy.log</string>
+    <string>/Users/hainingyu/Code/anyrouter_proxy/proxy.log</string>
 
     <!-- Working directory -->
     <key>WorkingDirectory</key>
-    <string>/Users/hainingyu/Code/hermes_anyrouter_proxy</string>
+    <string>/Users/hainingyu/Code/anyrouter_proxy</string>
 
     <!-- Run as user, not root -->
     <key>ProcessType</key>
