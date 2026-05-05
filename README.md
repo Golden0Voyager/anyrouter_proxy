@@ -32,6 +32,62 @@ hermes  →  http://127.0.0.1:8989  →  https://anyrouter.top  →  Claude
 | `proxy.log` | 运行时日志（被 .gitignore 排除）|
 | `local.hermes-anyrouter-proxy.plist` | launchd 配置参考（实际加载的副本在 `~/Library/LaunchAgents/`）|
 
+## 首次部署（新用户）
+
+### 1. 克隆项目
+
+```bash
+git clone https://github.com/Golden0Voyager/anyrouter_proxy.git ~/Code/anyrouter_proxy
+```
+
+### 2. 准备 `template.json`
+
+`template.json` 包含 anyrouter 必需的设备指纹和请求模板，**不在 git 中**（含个人 `device_id`）。你有三种方式获取：
+
+| 方式 | 适用场景 | 步骤 |
+|---|---|---|
+| **A. 拷贝现有用户的 `template.json`** | 家人/团队成员已有配置 | `cp /现有用户路径/anyrouter_proxy/template.json ~/Code/anyrouter_proxy/` |
+| **B. 用 Claude Code 抓取** | 自己首次部署 | 见下方"抓取 template.json" |
+| **C. 基于 `template.example.json` 修改** | 无法抓包时 fallback | `cp template.example.json template.json`，手动填入你的 `device_id` |
+
+#### 方式 B：用 Claude Code 抓取 `template.json`
+
+前提：你的 Claude Code 已通过 anyrouter 官方通道正常对话。
+
+```bash
+# 1. 启动 Claude Code（会自动走 anyrouter）
+claude
+
+# 2. 另开终端，找到 Claude Code 最新的请求日志
+# Claude Code 日志路径示例：
+# ~/Library/Caches/anthropic/claude-code/logs/
+# 找到任意一条 POST /v1/messages 的完整请求 body
+
+# 3. 提取 body 中以下字段保存为 template.json：
+# - system（完整数组，含 billing header）
+# - metadata（含 device_id）
+# - thinking
+# - context_management
+# - output_config
+```
+
+### 3. 替换 plist 中的用户名路径
+
+项目中的 plist 模板使用占位用户名 `/Users/hainingyu/`，需要替换成你自己的：
+
+```bash
+cd ~/Code/anyrouter_proxy
+sed -i '' "s|/Users/hainingyu/|$HOME/|g" local.hermes-anyrouter-proxy.plist
+```
+
+### 4. 设置 API Key
+
+在 `~/.zshenv.secrets`（或 `~/.bash_profile`、`~/.zshrc`）中：
+
+```bash
+export ANYROUTER_API_KEY="your-anyrouter-api-key"
+```
+
 ## 部署
 
 ```bash
@@ -216,6 +272,33 @@ anyrouter-proxy
 - macOS（launchd）
 - Python 3.10+（用 `/opt/homebrew/bin/python3`，标准库即可，无外部依赖）
 - 一个能用 Claude Code (`claude` CLI) 接通 anyrouter 的账号 —— 用于第一次抓取请求模板
+
+## 从旧版本迁移
+
+如果你之前部署过 `hermes_anyrouter_proxy`，按以下步骤同步改名：
+
+```bash
+# 1. 停止代理
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/local.hermes-anyrouter-proxy.plist
+
+# 2. 更新 remote
+cd ~/Code/hermes_anyrouter_proxy
+git remote set-url origin https://github.com/Golden0Voyager/anyrouter_proxy.git
+git pull
+
+# 3. 重命名目录
+cd ~/Code
+mv hermes_anyrouter_proxy anyrouter_proxy
+
+# 4. 同步 plist 路径
+sed -i '' 's|hermes_anyrouter_proxy|anyrouter_proxy|g' ~/Library/LaunchAgents/local.hermes-anyrouter-proxy.plist
+
+# 5. 重新加载
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.hermes-anyrouter-proxy.plist
+
+# 6. 更新 zshrc alias（如果有）
+# alias anyrouter-proxy='bash ~/Code/anyrouter_proxy/anyrouter-proxy.sh'
+```
 
 ## License
 
