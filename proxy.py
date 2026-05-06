@@ -361,7 +361,13 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             data = resp.read()
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                # Client disconnected before we finished writing (common when
+                # upstream returns 429 and Claude Code closes the socket to
+                # retry). Mirrors the protection in _stream_chunked above.
+                pass
 
     def _stream_chunked(self, resp: Any) -> None:
         try:
