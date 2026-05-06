@@ -388,6 +388,15 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         self._proxy()
 
+    def do_HEAD(self) -> None:
+        # Lightweight liveness probe. Some tools (browsers, monitors, even
+        # Claude Code on startup) HEAD `/` to check whether the listener is
+        # alive. Reply 200 immediately instead of letting BaseHTTPRequestHandler
+        # return 501, which spams the access log without signalling anything.
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
 
 class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
